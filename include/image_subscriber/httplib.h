@@ -1,4 +1,6 @@
-//
+
+#ifndef CPPHTTPLIB_KEEPALIVE_TIMEOUT_SECOND
+#define E0618766_861A_4F14_8BE6_E93DD382BF18
 //  httplib.h
 //
 //  Copyright (c) 2024 Yuji Hirose. All rights reserved.
@@ -10255,3 +10257,6 @@ inline SSL_CTX *Client::ssl_context() const {
 #endif
 
 #endif // CPPHTTPLIB_HTTPLIB_H
+
+
+#endif /* E0618766_861A_4F14_8BE6_E93DD382BF18 */

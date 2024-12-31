@@ -11,11 +11,6 @@ find_package(catkin REQUIRED COMPONENTS
   rtabmap_conversions
 )
 
-find_package(g2o REQUIRED)
-# 添加 g2o 头文件路径
-include_directories(/home/jetson/g2o/g2o/include)
-link_directories(/home/jetson/g2o/g2o/lib)
-
 
 # 设置Boost库的路径
 find_package(Boost REQUIRED COMPONENTS serialization)
