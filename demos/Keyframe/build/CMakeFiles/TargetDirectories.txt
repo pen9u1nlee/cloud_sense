@@ -1,0 +1,4 @@
+/home/jetson/cloud_edge_test/Keyframe/build/CMakeFiles/rebuild_cache.dir
+/home/jetson/cloud_edge_test/Keyframe/build/CMakeFiles/edit_cache.dir
+/home/jetson/cloud_edge_test/Keyframe/build/CMakeFiles/edge.dir
+/home/jetson/cloud_edge_test/Keyframe/build/CMakeFiles/cloud.dir
