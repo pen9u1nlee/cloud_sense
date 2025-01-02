@@ -5,108 +5,210 @@
 #include <opencv2/opencv.hpp>
 #include <deque>
 #include <memory>
+#include <nav_msgs/Odometry.h>
 #include <rtabmap/core/SensorData.h>
 #include <rtabmap/core/RegistrationIcp.h>  // 引入 RegistrationICP 类型
 #include <rtabmap/core/util2d.h>
+#include <rtabmap/core/CameraModel.h>
+#include <rtabmap/core/Transform.h>
 #include <rtabmap/core/Features2d.h>  // 引入 Feature2D 类
 #include <httplib.h>
 #include <vector>
 #include "sensor_data_serialization.h"
+#include "image_subscriber/KeyFrameRGB.h"
+#include <message_filters/subscriber.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <tf/transform_listener.h>
+#include <rtabmap_conversions/MsgConversion.h>
 
 class RGBDHandler
 {
 public:
-    RGBDHandler() : nh_("~"), max_queue_size_(10), nb_local_keyframes_(0), keyframe_generation_ratio_threshold_(0.99f), min_inliers_(10)
+    RGBDHandler() : nh_("~"), max_queue_size_(10), nb_local_keyframes_(0), keyframe_generation_ratio_threshold_(0.9f), min_inliers_(10)
     {
         // 创建 ImageTransport 对象并订阅图像话题
+        // image_transport::Subscriber rgb_sub_;  // 订阅 RGB 图像
+        // image_transport::Subscriber depth_sub_; // 订阅 D 图像
+
         image_transport::ImageTransport it(nh_);
-        rgb_sub_ = it.subscribe("/camera/rgb/image_raw", 1, &RGBDHandler::imageCallback, this);
+        message_filters::Subscriber<sensor_msgs::Image> rgb_sub_(nh_, "/camera/rgb/image_raw", 1);
+        message_filters::Subscriber<sensor_msgs::Image> depth_sub_(nh_, "/camera/depth/image_raw", 1);
+        message_filters::Subscriber<sensor_msgs::CameraInfo> camera_info_sub_(nh_, "/camera/camera_info", 1);
+        message_filters::Subscriber<nav_msgs::Odometry> odom_sub_(nh_, "/odom", 1);
+
+        typedef message_filters::sync_policies::ApproximateTime<
+        sensor_msgs::Image, 
+        sensor_msgs::Image, 
+        sensor_msgs::CameraInfo, 
+        nav_msgs::Odometry> SyncPolicy;
+
+        message_filters::Synchronizer<SyncPolicy> sync(SyncPolicy(10), rgb_sub_, depth_sub_, camera_info_sub_, odom_sub_);
+
+        sync.registerCallback(boost::bind(&RGBDHandler::imageCallback, _1, _2, _3, _4));
+
+        // rgb_sub_ = it.subscribe("/camera/rgb/image_raw", 1, &RGBDHandler::imageCallback, this);
 
         // 初始化 RegistrationICP（具体实现类）
         registration_ = std::make_shared<rtabmap::RegistrationIcp>();
+        tf_listener_ = std::make_shared<tf::TransformListener>();
     }
 
     // 图像回调函数
-    void imageCallback(const sensor_msgs::ImageConstPtr& msg)
-    {
-    try
-    {
-        //ROS_INFO("Received image with timestamp: %f and size: %dx%d", msg->header.stamp.toSec(), msg->width, msg->height);
-        // 使用 cv_bridge 将 ROS 图像消息转换为 OpenCV 图像
-        cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-        cv::Mat rgb_image = cv_ptr->image;
+    // image_rect_rgb,
+    // const sensor_msgs::msg::Image::ConstSharedPtr image_rect_depth,
+    // const sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_info_rgb,
+    // const nav_msgs::msg::Odometry::ConstSharedPtr odom
+    void imageCallback(
+        const sensor_msgs::ImageConstPtr& rgb_msg,
+        const sensor_msgs::ImageConstPtr& dph_msg,
+        const sensor_msgs::CameraInfoConstPtr& camera_info,
+        const nav_msgs::OdometryConstPtr& odom) {
+    
+        try {
+            //ROS_INFO("Received image with timestamp: %f and size: %dx%d", msg->header.stamp.toSec(), msg->width, msg->height);
+            // 使用 cv_bridge 将 ROS 图像消息转换为 OpenCV 图像
+            
+            // cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::BGR8);
+            // cv::Mat rgb_image = cv_ptr->image;
 
-        // 创建并设置 rtabmap::SensorData 对象
-        rtabmap::SensorData sensor_data(rgb_image, msg->header.stamp.toSec());
+            // 创建并设置 rtabmap::SensorData 对象
+            // rtabmap::SensorData sensor_data(rgb_image, msg->header.stamp.toSec());
 
-        // 将传感器数据加入队列
-        if (received_data_queue_.size() >= max_queue_size_)
-        {
-            // 在队列已满时删除最旧数据
-            received_data_queue_.pop_front();  // 删除队列中的最旧数据
-            ROS_INFO("Queue size exceeded. Removed oldest data. Current queue size: %ld", received_data_queue_.size());
+            cv_bridge::CvImageConstPtr ptr_image = cv_bridge::toCvShare(rgb_msg);
+            if (rgb_msg->encoding.compare(sensor_msgs::image_encodings::TYPE_8UC1) != 0 &&
+                rgb_msg->encoding.compare(sensor_msgs::image_encodings::MONO8) != 0)
+            {
+                if (rgb_msg->encoding.compare(sensor_msgs::image_encodings::MONO16) != 0)
+                {
+                ptr_image = cv_bridge::cvtColor(ptr_image, "bgr8");
+                }
+                else
+                {
+                ptr_image = cv_bridge::cvtColor(ptr_image, "mono8");
+                }
+            }
+            ros::Time stamp = rtabmap_conversions::timestampFromROS(rgb_msg->header.stamp) > rtabmap_conversions::timestampFromROS(dph_msg->header.stamp) ? rgb_msg->header.stamp : dph_msg->header.stamp;
+
+            rtabmap::Transform local_transform(0,0,0,0,0,0);
+            if (base_frame_id_ != "") {
+                // here error occurs
+                local_transform = rtabmap_conversions::getTransform(base_frame_id_, rgb_msg->header.frame_id, stamp, *tf_listener_, 0.1);
+                if (local_transform.isNull()) {
+                    return;
+                }
+            }
+
+            cv_bridge::CvImageConstPtr ptr_depth = cv_bridge::toCvShare(dph_msg);
+
+            rtabmap::CameraModel camera_model = rtabmap_conversions::cameraModelFromROS(*camera_info, local_transform);
+
+            // copy data
+            cv::Mat rgb, depth;
+            ptr_image->image.copyTo(rgb);
+            ptr_depth->image.copyTo(depth);
+
+            auto data = std::make_shared<rtabmap::SensorData>(
+                rgb, depth,
+                camera_model,
+                0,
+                rtabmap_conversions::timestampFromROS(stamp));
+
+            received_data_queue_.push_back(std::make_pair(data, odom));
+            if (received_data_queue_.size() > max_queue_size_)
+            {
+                // Remove the oldest keyframes if we exceed the maximum size
+                received_data_queue_.pop_front();
+                ROS_WARN("RGBD: Maximum queue size (%d) exceeded, the oldest element was removed.", max_queue_size_);
+            }
+            // 输出调试信息
+            ROS_INFO("Added image to the queue. Queue size: %ld", received_data_queue_.size());
         }
+        catch (cv_bridge::Exception& e) {
+            ROS_ERROR("cv_bridge exception: %s", e.what());
+        }
+    }
 
-        // 将新的 sensor_data 加入队列
-        received_data_queue_.push_back(std::make_shared<rtabmap::SensorData>(sensor_data));
 
-        // 输出调试信息
-        ROS_INFO("Added image to the queue. Queue size: %ld", received_data_queue_.size());
-    }
-    catch (cv_bridge::Exception& e)
-    {
-        ROS_ERROR("cv_bridge exception: %s", e.what());
-    }
-    }
+        
+                // // 处理图像特征（计算局部描述子）
+                // compute_local_descriptors(sensor_data);
+
+                // // 判断是否生成关键帧
+                // bool generate_keyframe = generate_new_keyframe(sensor_data);
+                // if (generate_keyframe)
+                // {
+                //     nb_local_keyframes_++;
+                //     ROS_INFO("Keyframe generated. Local keyframes count: %d", nb_local_keyframes_);
+                // }
+
+                // // 如果生成了关键帧，则将其插入描述子映射
+                // if (generate_keyframe)
+                // {
+                //    local_descriptors_map_.insert({sensor_data->id(), sensor_data});
+                //    // 发送关键帧到云端
+                //    send_keyframe(sensor_data);
+                //    // sendSensorDataToCloud(*sensor_data);  // 发送关键帧数据
+                // }
+
+                // // 清除处理过的传感器数据
+                // clear_sensor_data(sensor_data);
+            
 
     // 处理接收到的传感器数据
-    void process_new_sensor_data()
-    {
+    void process_new_sensor_data() {
         if (!received_data_queue_.empty())
         {
             // 获取队列中的第一个传感器数据
+            // std::pair<std::shared_ptr<rtabmap::SensorData>, std::shared_ptr<nav_msgs::OdometryConstPtr>> sensor_data = received_data_queue_.front();
             auto sensor_data = received_data_queue_.front();
             received_data_queue_.pop_front();
            
             ROS_INFO("Processing sensor data. Queue size after pop: %ld", received_data_queue_.size());
+            if (sensor_data.first->isValid()) {
+                compute_local_descriptors(sensor_data.first);
 
-            // 处理有效数据
-            if (sensor_data->isValid())
-            {
-                // 处理图像特征（计算局部描述子）
-                compute_local_descriptors(sensor_data);
-
-                // 判断是否生成关键帧
-                bool generate_keyframe = generate_new_keyframe(sensor_data);
+                bool generate_keyframe = generate_new_keyframe(sensor_data.first);
                 if (generate_keyframe)
                 {
+                    // Set keyframe ID
+                    sensor_data.first->setId(nb_local_keyframes_);
                     nb_local_keyframes_++;
-                    ROS_INFO("Keyframe generated. Local keyframes count: %d", nb_local_keyframes_);
+
+                    // Send keyframe for loop detection
+                    send_keyframe(sensor_data);
+
                 }
 
-                // 清除处理过的传感器数据
-                clear_sensor_data(sensor_data);
+                clear_sensor_data(sensor_data.first);
 
-                // 如果生成了关键帧，则将其插入描述子映射
                 if (generate_keyframe)
                 {
-                   local_descriptors_map_.insert({sensor_data->id(), sensor_data});
-                   // 发送关键帧到云端
-                   sendSensorDataToCloud(*sensor_data);  // 发送关键帧数据
+                    local_descriptors_map_.insert({sensor_data.first->id(), sensor_data.first});
                 }
-            }
+            }   
         }
     }
 
+
 private:
     ros::NodeHandle nh_;
-    image_transport::Subscriber rgb_sub_;  // 订阅 RGB 图像
 
-    std::deque<std::shared_ptr<rtabmap::SensorData>> received_data_queue_;  // 存储 rtabmap::SensorData 对象
+    
+    // std::deque<std::shared_ptr<rtabmap::SensorData>> received_data_queue_;  // 存储 rtabmap::SensorData 对象
+    std::deque<std::pair<std::shared_ptr<rtabmap::SensorData>, nav_msgs::OdometryConstPtr>> received_data_queue_;
+
     float keyframe_generation_ratio_threshold_; 
     int max_queue_size_ = 10;  // 队列最大大小
     int nb_local_keyframes_;  // 本地关键帧数量
     int min_inliers_;
+    std::string base_frame_id_;
+
+    
+    tf::TransformListener tf_listener_;
+    // std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    // std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    
     // 注册变换工具
     std::shared_ptr<rtabmap::RegistrationIcp> registration_;  // 使用智能指针管理
     std::shared_ptr<rtabmap::SensorData> previous_keyframe_;  // 记录上一个关键帧
@@ -221,7 +323,35 @@ private:
     // 本地描述子映射
     std::map<double, std::shared_ptr<rtabmap::SensorData>> local_descriptors_map_;
 
+    void send_keyframe(const std::pair<std::shared_ptr<rtabmap::SensorData>, nav_msgs::OdometryConstPtr> &keypoints_data) {
+        cv::Mat rgb;
+        keypoints_data.first->uncompressDataConst(&rgb, 0);
 
+        // Image message
+        image_subscriber::KeyFrameRGB kfmsg;
+        sensor_msgs::Image img_msg;
+        kfmsg.image_data = img_msg;
+        
+        img_msg.header.stamp = keypoints_data.second->header.stamp;
+        cv_bridge::CvImage image_bridge = cv_bridge::CvImage(
+            img_msg.header, sensor_msgs::image_encodings::RGB8, rgb);
+        
+        
+        image_bridge.toImageMsg(kfmsg.image_data);
+        kfmsg.id = keypoints_data.first->id();
+
+        std::vector<uint8_t> buffer;
+        // 获取消息对象的字节大小，以便为缓冲区预留足够空间
+        std::cout << "Serialized data length: " << buffer.size() << std::endl;
+        uint32_t buffer_size = ros::serialization::serializationLength(kfmsg);
+        buffer.resize(buffer_size);
+        // 使用ros::serialization::serialize进行序列化，将消息数据存入缓冲区
+        ros::serialization::OStream stream(buffer.data(), buffer_size);
+        ros::serialization::serialize(stream, kfmsg);
+
+        std::cout << "Serialized data length: " << buffer.size() << std::endl;
+        // delete *buffer;
+    }
 
     void sendSensorDataToCloud(const rtabmap::SensorData& sensor_data)
     {
