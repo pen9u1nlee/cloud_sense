@@ -1,0 +1,13 @@
+<launch>
+	<node pkg="rtabmap_odom" type="rgbd_odometry" name="rgbd_odometry">
+        <param name="frame_id" value="camera_link"/>
+        <remap from="/rgb/image" to="/camera/rgb/image_raw" />
+        <remap from="/depth/image" to="/camera/depth/image_raw" />
+        <remap from="/rgb/camera_info" to="/camera/rgb/camera_info" />
+    </node>
+
+    <!-- <node pkg="cloud-sense" type="image_subscriber" name="image_subscriber" /> -->
+</launch>
+
+<!-- https://robotics.stackexchange.com/questions/85250/rtabmap-rgbd-odometry-and-intel-realsense-could-not-get-transform-from-base-lin -->
+    <!-- This answer tells me to add <param name="frame_id" value="camera_link"/> and it works -->
