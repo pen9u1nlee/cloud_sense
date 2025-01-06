@@ -6,7 +6,7 @@
         <remap from="/rgb/camera_info" to="/camera/rgb/camera_info" />
     </node>
 
-    <!-- <node pkg="cloud-sense" type="image_subscriber" name="image_subscriber" /> -->
+    <!-- <node pkg="cloud_sense" type="image_subscriber" name="image_subscriber" output = "screen" /> -->
 </launch>
 
 <!-- https://robotics.stackexchange.com/questions/85250/rtabmap-rgbd-odometry-and-intel-realsense-could-not-get-transform-from-base-lin -->

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>image_subscriber</name>
+  <name>cloud_sense</name>
   <version>0.0.0</version>
-  <description>The image_subscriber package</description>
+  <description>The cloud_sense package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->

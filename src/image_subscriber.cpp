@@ -23,13 +23,11 @@
 #include <rtabmap_conversions/MsgConversion.h>
 #include "RGBDHandler.h"
 
-// void test_callback(const sensor_msgs::ImageConstPtr& rgb_msg,
-//                    const sensor_msgs::ImageConstPtr& dph_msg,
-//                    const sensor_msgs::CameraInfoConstPtr& camera_info,
-//                    const nav_msgs::OdometryConstPtr& odom
-//                    );
-
-
+void test_callback(const sensor_msgs::ImageConstPtr& rgb_msg,
+                   const sensor_msgs::ImageConstPtr& dph_msg,
+                   const sensor_msgs::CameraInfoConstPtr& camera_info,
+                   const nav_msgs::OdometryConstPtr& odom
+                   );
 
 RGBDHandler::RGBDHandler(ros::NodeHandle nh, int max_queue_size, int nb_local_keyframes, float keyframe_generation_ratio_threshold, int min_inliers) {
     
@@ -41,26 +39,26 @@ RGBDHandler::RGBDHandler(ros::NodeHandle nh, int max_queue_size, int nb_local_ke
 
     image_transport::ImageTransport it(nh_);
     
-    message_filters::Subscriber<sensor_msgs::Image> rgb_sub_(nh_, "/camera/rgb/image_raw", 1);
-    message_filters::Subscriber<sensor_msgs::Image> depth_sub_(nh_, "/camera/depth/image_raw", 1);
-    message_filters::Subscriber<sensor_msgs::CameraInfo> camera_info_sub_(nh_, "/camera/camera_info", 1);
-    message_filters::Subscriber<nav_msgs::Odometry> odom_sub_(nh_, "/odom", 1);
+    rgb_sub_ = new message_filters::Subscriber<sensor_msgs::Image>(nh_, "/camera/rgb/image_raw", 1);
+    depth_sub_ = new message_filters::Subscriber<sensor_msgs::Image>(nh_, "/camera/depth/image_raw", 1);
+    camera_info_sub_ = new message_filters::Subscriber<sensor_msgs::CameraInfo>(nh_, "/camera/rgb/camera_info", 1);
+    odom_sub_ = new message_filters::Subscriber<nav_msgs::Odometry>(nh_, "/odom", 1);
+    // message_filters::Subscriber<sensor_msgs::Image> rgb_sub(nh_, "/camera/rgb/image_raw", 1);
+    // message_filters::Subscriber<sensor_msgs::Image> depth_sub(nh_, "/camera/depth/image_raw", 1);
+    // message_filters::Subscriber<sensor_msgs::CameraInfo> camera_info_sub(nh_, "/camera/rgb/camera_info", 1);
+    // message_filters::Subscriber<nav_msgs::Odometry> odom_sub(nh_, "/odom", 1);
 
-    typedef message_filters::sync_policies::ApproximateTime<
-    sensor_msgs::Image, 
-    sensor_msgs::Image, 
-    sensor_msgs::CameraInfo, 
-    nav_msgs::Odometry> SyncPolicy;
 
-    message_filters::Synchronizer<SyncPolicy> sync(SyncPolicy(10), rgb_sub_, depth_sub_, camera_info_sub_, odom_sub_);
-
-    sync.registerCallback(boost::bind(&RGBDHandler::imageCallback, this, _1, _2, _3, _4));
-
+    sync = new message_filters::Synchronizer<SyncPolicy>(SyncPolicy(10), *rgb_sub_, *depth_sub_, *camera_info_sub_, *odom_sub_);
+    
+    // sync.registerCallback(boost::bind(&test_callback, _1, _2, _3, _4));
     // rgb_sub_ = it.subscribe("/camera/rgb/image_raw", 1, &RGBDHandler::imageCallback, this);
 
     // 初始化 RegistrationICP（具体实现类）
     registration_ = std::make_shared<rtabmap::RegistrationIcp>();
     // tf_listener_ = std::make_shared<tf::TransformListener>();
+
+    std::cout << "rgbdhandler generated" << std::endl;
 }
 
 
@@ -72,7 +70,7 @@ void RGBDHandler::imageCallback(
     const sensor_msgs::ImageConstPtr& dph_msg,
     const sensor_msgs::CameraInfoConstPtr& camera_info,
     const nav_msgs::OdometryConstPtr& odom) {
-
+        std::cout << "maybe this motherfucking callback does not work at all " << std::endl;
     
     try {
         //ROS_INFO("Received image with timestamp: %f and size: %dx%d", msg->header.stamp.toSec(), msg->width, msg->height);
@@ -133,9 +131,8 @@ void RGBDHandler::imageCallback(
 }
 
 // 处理接收到的传感器数据
-void RGBDHandler::process_new_sensor_data() {
-    if (!received_data_queue_.empty())
-    {
+void RGBDHandler::process_new_sensor_data(const ros::TimerEvent& e) {
+    if (!received_data_queue_.empty()) {
         // 获取队列中的第一个传感器数据
         // std::pair<std::shared_ptr<rtabmap::SensorData>, std::shared_ptr<nav_msgs::OdometryConstPtr>> sensor_data = received_data_queue_.front();
         auto sensor_data = received_data_queue_.front();
@@ -164,6 +161,9 @@ void RGBDHandler::process_new_sensor_data() {
                 local_descriptors_map_.insert({sensor_data.first->id(), sensor_data.first});
             }
         }   
+    }
+    else {
+        ROS_DEBUG("the queue is empty");
     }
 }
 
@@ -302,8 +302,12 @@ void RGBDHandler::send_keyframe(const std::pair<std::shared_ptr<rtabmap::SensorD
     ros::serialization::OStream stream(buffer.data(), buffer_size);
     ros::serialization::serialize(stream, kfmsg);
 
-    std::cout << "Serialized data length: " << buffer.size() << std::endl;
-    // delete *buffer;
+    std::cout << "Serialized data length: " <<  buffer.size() << std::endl;
+    ROS_DEBUG("Serialized data length: %ld \n", buffer.size());
+}
+
+ros::NodeHandle& RGBDHandler::getNH() {
+    return nh_;
 }
 
 void RGBDHandler::sendSensorDataToCloud(const rtabmap::SensorData& sensor_data)
@@ -351,20 +355,15 @@ void RGBDHandler::sendSensorDataToCloud(const rtabmap::SensorData& sensor_data)
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "image_subscriber");
-    //  nh_("~"), max_queue_size_(10), nb_local_keyframes_(0), keyframe_generation_ratio_threshold_(0.9f), min_inliers_(10)
-    RGBDHandler handler(ros::NodeHandle("~"), 10, 0, 0.9f, 10);
+    RGBDHandler handler(ros::NodeHandle("~"), 30, 0, 0.9f, 10);
+
+    handler.sync->registerCallback(boost::bind(&RGBDHandler::imageCallback, &handler, _1, _2, _3, _4));
+    ros::Timer processorTimer = handler.getNH().createTimer(ros::Duration(0.1), 
+                                                            boost::bind(&RGBDHandler::process_new_sensor_data, &handler, _1));
+    std::cout << "timer created" << std::endl;
 
     // 保持节点运行
-    ros::Rate loop_rate(10);  // 设定循环频率
-    while (ros::ok())
-    {
-        // 处理接收到的传感器数据
-        handler.process_new_sensor_data();
-
-        // 处理ROS回调
-        ros::spinOnce();
-        loop_rate.sleep();
-    }
+    ros::spin();
 
     return 0;
 }

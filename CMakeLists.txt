@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(image_subscriber)
+project(cloud_sense)
 
 # 查找 catkin 宏和库
 find_package(catkin REQUIRED COMPONENTS

@@ -25,13 +25,21 @@
 #include <tf/transform_listener.h>
 #include <rtabmap_conversions/MsgConversion.h>
 
+typedef message_filters::sync_policies::ApproximateTime<
+    sensor_msgs::Image, 
+    sensor_msgs::Image, 
+    sensor_msgs::CameraInfo, 
+    nav_msgs::Odometry> SyncPolicy;
+
 class RGBDHandler
 {
 public:
     RGBDHandler(ros::NodeHandle nh, int max_queue_size, int nb_local_keyframes, float keyframe_generation_ratio_threshold, int min_inliers);
 
+    ros::NodeHandle& getNH();
+
     // 处理接收到的传感器数据
-    void process_new_sensor_data();
+    void process_new_sensor_data(const ros::TimerEvent& e);
     void compute_local_descriptors(std::shared_ptr<rtabmap::SensorData> &frame_data);
     bool generate_new_keyframe(std::shared_ptr<rtabmap::SensorData>& keyframe);
     void clear_sensor_data(std::shared_ptr<rtabmap::SensorData>& sensor_data);
@@ -43,10 +51,19 @@ public:
         const sensor_msgs::CameraInfoConstPtr& camera_info,
         const nav_msgs::OdometryConstPtr& odom);
 
+    message_filters::Synchronizer<SyncPolicy> *sync;
+
+    
 private:
     ros::NodeHandle nh_;
 
+    message_filters::Subscriber<sensor_msgs::Image> *rgb_sub_;
+    message_filters::Subscriber<sensor_msgs::Image> *depth_sub_;
+    message_filters::Subscriber<sensor_msgs::CameraInfo> *camera_info_sub_;
+    message_filters::Subscriber<nav_msgs::Odometry> *odom_sub_;
+
     
+
     // std::deque<std::shared_ptr<rtabmap::SensorData>> received_data_queue_;  // 存储 rtabmap::SensorData 对象
     std::deque<std::pair<std::shared_ptr<rtabmap::SensorData>, nav_msgs::OdometryConstPtr>> received_data_queue_;
 
