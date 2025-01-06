@@ -73,63 +73,63 @@ void RGBDHandler::imageCallback(
     const sensor_msgs::CameraInfoConstPtr& camera_info,
     const nav_msgs::OdometryConstPtr& odom) {
 
-    std::cout << "hello world" << std::endl;
-    // try {
-    //     //ROS_INFO("Received image with timestamp: %f and size: %dx%d", msg->header.stamp.toSec(), msg->width, msg->height);
-    //     // 使用 cv_bridge 将 ROS 图像消息转换为 OpenCV 图像
+    
+    try {
+        //ROS_INFO("Received image with timestamp: %f and size: %dx%d", msg->header.stamp.toSec(), msg->width, msg->height);
+        // 使用 cv_bridge 将 ROS 图像消息转换为 OpenCV 图像
         
-    //     // cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::BGR8);
-    //     // cv::Mat rgb_image = cv_ptr->image;
+        // cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::BGR8);
+        // cv::Mat rgb_image = cv_ptr->image;
 
-    //     // 创建并设置 rtabmap::SensorData 对象
-    //     // rtabmap::SensorData sensor_data(rgb_image, msg->header.stamp.toSec());
+        // 创建并设置 rtabmap::SensorData 对象
+        // rtabmap::SensorData sensor_data(rgb_image, msg->header.stamp.toSec());
 
-    //     cv_bridge::CvImageConstPtr ptr_image = cv_bridge::toCvShare(rgb_msg);
-    //     if (rgb_msg->encoding.compare(sensor_msgs::image_encodings::TYPE_8UC1) != 0 &&
-    //         rgb_msg->encoding.compare(sensor_msgs::image_encodings::MONO8) != 0)
-    //     {
-    //         if (rgb_msg->encoding.compare(sensor_msgs::image_encodings::MONO16) != 0)
-    //         {
-    //         ptr_image = cv_bridge::cvtColor(ptr_image, "bgr8");
-    //         }
-    //         else
-    //         {
-    //         ptr_image = cv_bridge::cvtColor(ptr_image, "mono8");
-    //         }
-    //     }
-    //     ros::Time stamp = rtabmap_conversions::timestampFromROS(rgb_msg->header.stamp) > rtabmap_conversions::timestampFromROS(dph_msg->header.stamp) ? rgb_msg->header.stamp : dph_msg->header.stamp;
+        cv_bridge::CvImageConstPtr ptr_image = cv_bridge::toCvShare(rgb_msg);
+        if (rgb_msg->encoding.compare(sensor_msgs::image_encodings::TYPE_8UC1) != 0 &&
+            rgb_msg->encoding.compare(sensor_msgs::image_encodings::MONO8) != 0)
+        {
+            if (rgb_msg->encoding.compare(sensor_msgs::image_encodings::MONO16) != 0)
+            {
+            ptr_image = cv_bridge::cvtColor(ptr_image, "bgr8");
+            }
+            else
+            {
+            ptr_image = cv_bridge::cvtColor(ptr_image, "mono8");
+            }
+        }
+        ros::Time stamp = rtabmap_conversions::timestampFromROS(rgb_msg->header.stamp) > rtabmap_conversions::timestampFromROS(dph_msg->header.stamp) ? rgb_msg->header.stamp : dph_msg->header.stamp;
 
-    //     rtabmap::Transform local_transform(0,0,0,0,0,0);
+        rtabmap::Transform local_transform(0,0,0,0,0,0);
 
 
-    //     cv_bridge::CvImageConstPtr ptr_depth = cv_bridge::toCvShare(dph_msg);
+        cv_bridge::CvImageConstPtr ptr_depth = cv_bridge::toCvShare(dph_msg);
 
-    //     rtabmap::CameraModel camera_model = rtabmap_conversions::cameraModelFromROS(*camera_info, local_transform);
+        rtabmap::CameraModel camera_model = rtabmap_conversions::cameraModelFromROS(*camera_info, local_transform);
 
-    //     // copy data
-    //     cv::Mat rgb, depth;
-    //     ptr_image->image.copyTo(rgb);
-    //     ptr_depth->image.copyTo(depth);
+        // copy data
+        cv::Mat rgb, depth;
+        ptr_image->image.copyTo(rgb);
+        ptr_depth->image.copyTo(depth);
 
-    //     auto data = std::make_shared<rtabmap::SensorData>(
-    //         rgb, depth,
-    //         camera_model,
-    //         0,
-    //         rtabmap_conversions::timestampFromROS(stamp));
+        auto data = std::make_shared<rtabmap::SensorData>(
+            rgb, depth,
+            camera_model,
+            0,
+            rtabmap_conversions::timestampFromROS(stamp));
 
-    //     this->received_data_queue_.push_back(std::make_pair(data, odom));
-    //     if (this->received_data_queue_.size() > max_queue_size_)
-    //     {
-    //         // Remove the oldest keyframes if we exceed the maximum size
-    //         this->received_data_queue_.pop_front();
-    //         ROS_WARN("RGBD: Maximum queue size (%d) exceeded, the oldest element was removed.", max_queue_size_);
-    //     }
-    //     // 输出调试信息
-    //     ROS_INFO("Added image to the queue. Queue size: %ld", this->received_data_queue_.size());
-    // }
-    // catch (cv_bridge::Exception& e) {
-    //     ROS_ERROR("cv_bridge exception: %s", e.what());
-    // }
+        this->received_data_queue_.push_back(std::make_pair(data, odom));
+        if (this->received_data_queue_.size() > max_queue_size_)
+        {
+            // Remove the oldest keyframes if we exceed the maximum size
+            this->received_data_queue_.pop_front();
+            ROS_WARN("RGBD: Maximum queue size (%d) exceeded, the oldest element was removed.", max_queue_size_);
+        }
+        // 输出调试信息
+        ROS_INFO("Added image to the queue. Queue size: %ld", this->received_data_queue_.size());
+    }
+    catch (cv_bridge::Exception& e) {
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+    }
 }
 
 // 处理接收到的传感器数据
