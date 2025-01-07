@@ -61,8 +61,8 @@ private:
     message_filters::Subscriber<sensor_msgs::Image> *depth_sub_;
     message_filters::Subscriber<sensor_msgs::CameraInfo> *camera_info_sub_;
     message_filters::Subscriber<nav_msgs::Odometry> *odom_sub_;
-
     
+    ros::Publisher image_publisher_;
 
     // std::deque<std::shared_ptr<rtabmap::SensorData>> received_data_queue_;  // 存储 rtabmap::SensorData 对象
     std::deque<std::pair<std::shared_ptr<rtabmap::SensorData>, nav_msgs::OdometryConstPtr>> received_data_queue_;

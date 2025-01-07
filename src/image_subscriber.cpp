@@ -43,16 +43,10 @@ RGBDHandler::RGBDHandler(ros::NodeHandle nh, int max_queue_size, int nb_local_ke
     depth_sub_ = new message_filters::Subscriber<sensor_msgs::Image>(nh_, "/camera/depth/image_raw", 1);
     camera_info_sub_ = new message_filters::Subscriber<sensor_msgs::CameraInfo>(nh_, "/camera/rgb/camera_info", 1);
     odom_sub_ = new message_filters::Subscriber<nav_msgs::Odometry>(nh_, "/odom", 1);
-    // message_filters::Subscriber<sensor_msgs::Image> rgb_sub(nh_, "/camera/rgb/image_raw", 1);
-    // message_filters::Subscriber<sensor_msgs::Image> depth_sub(nh_, "/camera/depth/image_raw", 1);
-    // message_filters::Subscriber<sensor_msgs::CameraInfo> camera_info_sub(nh_, "/camera/rgb/camera_info", 1);
-    // message_filters::Subscriber<nav_msgs::Odometry> odom_sub(nh_, "/odom", 1);
-
 
     sync = new message_filters::Synchronizer<SyncPolicy>(SyncPolicy(10), *rgb_sub_, *depth_sub_, *camera_info_sub_, *odom_sub_);
-    
-    // sync.registerCallback(boost::bind(&test_callback, _1, _2, _3, _4));
-    // rgb_sub_ = it.subscribe("/camera/rgb/image_raw", 1, &RGBDHandler::imageCallback, this);
+
+    image_publisher_ = nh_.advertise<image_subscriber::KeyFrameRGB>("/keyframe_rgb", 20);
 
     // 初始化 RegistrationICP（具体实现类）
     registration_ = std::make_shared<rtabmap::RegistrationIcp>();
@@ -70,7 +64,6 @@ void RGBDHandler::imageCallback(
     const sensor_msgs::ImageConstPtr& dph_msg,
     const sensor_msgs::CameraInfoConstPtr& camera_info,
     const nav_msgs::OdometryConstPtr& odom) {
-        std::cout << "maybe this motherfucking callback does not work at all " << std::endl;
     
     try {
         //ROS_INFO("Received image with timestamp: %f and size: %dx%d", msg->header.stamp.toSec(), msg->width, msg->height);
@@ -293,17 +286,17 @@ void RGBDHandler::send_keyframe(const std::pair<std::shared_ptr<rtabmap::SensorD
     image_bridge.toImageMsg(kfmsg.image_data);
     kfmsg.id = keypoints_data.first->id();
 
+    image_publisher_.publish(kfmsg);
+
     std::vector<uint8_t> buffer;
     // 获取消息对象的字节大小，以便为缓冲区预留足够空间
-    std::cout << "Serialized data length: " << buffer.size() << std::endl;
     uint32_t buffer_size = ros::serialization::serializationLength(kfmsg);
     buffer.resize(buffer_size);
     // 使用ros::serialization::serialize进行序列化，将消息数据存入缓冲区
     ros::serialization::OStream stream(buffer.data(), buffer_size);
     ros::serialization::serialize(stream, kfmsg);
 
-    std::cout << "Serialized data length: " <<  buffer.size() << std::endl;
-    ROS_DEBUG("Serialized data length: %ld \n", buffer.size());
+    std::cout << "Serialized data length: " << buffer.size() << std::endl;
 }
 
 ros::NodeHandle& RGBDHandler::getNH() {
@@ -355,10 +348,10 @@ void RGBDHandler::sendSensorDataToCloud(const rtabmap::SensorData& sensor_data)
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "image_subscriber");
-    RGBDHandler handler(ros::NodeHandle("~"), 30, 0, 0.9f, 10);
+    RGBDHandler handler(ros::NodeHandle("~"), 30, 0, 0.85f, 10);
 
     handler.sync->registerCallback(boost::bind(&RGBDHandler::imageCallback, &handler, _1, _2, _3, _4));
-    ros::Timer processorTimer = handler.getNH().createTimer(ros::Duration(0.1), 
+    ros::Timer processorTimer = handler.getNH().createTimer(ros::Duration(0.02), 
                                                             boost::bind(&RGBDHandler::process_new_sensor_data, &handler, _1));
     std::cout << "timer created" << std::endl;
 
