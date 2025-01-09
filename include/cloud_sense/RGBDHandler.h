@@ -18,7 +18,7 @@
 #include <httplib.h>
 #include <vector>
 #include "sensor_data_serialization.h"
-#include "image_subscriber/KeyFrameRGB.h"
+#include "cloud_sense/KeyFrameRGB.h"
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -44,7 +44,7 @@ public:
     bool generate_new_keyframe(std::shared_ptr<rtabmap::SensorData>& keyframe);
     void clear_sensor_data(std::shared_ptr<rtabmap::SensorData>& sensor_data);
     void send_keyframe(const std::pair<std::shared_ptr<rtabmap::SensorData>, nav_msgs::OdometryConstPtr> &keypoints_data);
-    void sendSensorDataToCloud(const rtabmap::SensorData& sensor_data);
+    void sendDataToCloud(const std::vector<uint8_t>& serialized_data);
     void imageCallback(
         const sensor_msgs::ImageConstPtr& rgb_msg,
         const sensor_msgs::ImageConstPtr& dph_msg,

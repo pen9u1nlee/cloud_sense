@@ -9,7 +9,6 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   rtabmap_ros
   rtabmap_conversions
-
   std_msgs
   message_generation
 )
@@ -34,15 +33,16 @@ find_package(rtabmap REQUIRED)  # 查找 RTAB-Map 库
 find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-# 包含头文件
+# 查找并设置 HTTP 库 (httplib)
 include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(
-  ${PROJECT_SOURCE_DIR}/include/image_subscriber  # 添加 httplib.h 的路径
+  ${PROJECT_SOURCE_DIR}/include/cloud_sense  # 添加 httplib.h 的路径
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${rtabmap_INCLUDE_DIRS}  # 这里是自动生成的 RTAB-Map 头文件目录
   ${CSLAM_COMMON_INTERFACES_PATH}/include  # 添加 cslam_common_interfaces 头文件路径
 )
+
 
 # 查找并链接线程库
 find_package(Threads REQUIRED)  # 找到并链接线程库
@@ -55,25 +55,30 @@ catkin_package(
 ) 
 
 # 创建可执行文件
+add_executable(cloud_node src/cloud.cpp)  # 创建 cloud_node 可执行文件
 add_executable(image_subscriber src/image_subscriber.cpp)  # 创建 image_subscriber 可执行文件
-# add_executable(pgo src/pgo.cpp) 
 
 # 为每个目标链接相应的库
+target_link_libraries(cloud_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${RTABMAP_LIBRARIES}
+  ${CMAKE_THREAD_LIBS_INIT}
+  Boost::serialization
+)
+
 target_link_libraries(image_subscriber
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
   ${RTABMAP_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
-
-  ${OpenCV_LIBS}
   Boost::serialization
-  # rtabmap_core
-  # image_transport
 )
-
 
 # 安装目标
-install(TARGETS image_subscriber
+install(TARGETS cloud_node image_subscriber
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+
+
 

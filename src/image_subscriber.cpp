@@ -15,7 +15,7 @@
 #include <httplib.h>
 #include <vector>
 #include "sensor_data_serialization.h"
-#include "image_subscriber/KeyFrameRGB.h"
+#include "cloud_sense/KeyFrameRGB.h"
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -46,7 +46,7 @@ RGBDHandler::RGBDHandler(ros::NodeHandle nh, int max_queue_size, int nb_local_ke
 
     sync = new message_filters::Synchronizer<SyncPolicy>(SyncPolicy(10), *rgb_sub_, *depth_sub_, *camera_info_sub_, *odom_sub_);
 
-    image_publisher_ = nh_.advertise<image_subscriber::KeyFrameRGB>("/keyframe_rgb", 20);
+    image_publisher_ = nh_.advertise<cloud_sense::KeyFrameRGB>("/keyframe_rgb", 20);
 
     // 初始化 RegistrationICP（具体实现类）
     registration_ = std::make_shared<rtabmap::RegistrationIcp>();
@@ -274,7 +274,7 @@ void RGBDHandler::send_keyframe(const std::pair<std::shared_ptr<rtabmap::SensorD
     keypoints_data.first->uncompressDataConst(&rgb, 0);
 
     // Image message
-    image_subscriber::KeyFrameRGB kfmsg;
+    cloud_sense::KeyFrameRGB kfmsg;
     sensor_msgs::Image img_msg;
     kfmsg.image_data = img_msg;
     
@@ -287,7 +287,7 @@ void RGBDHandler::send_keyframe(const std::pair<std::shared_ptr<rtabmap::SensorD
     kfmsg.id = keypoints_data.first->id();
 
     image_publisher_.publish(kfmsg);
-
+    std::printf("Keyframe ID: %d\n", kfmsg.id);
     std::vector<uint8_t> buffer;
     // 获取消息对象的字节大小，以便为缓冲区预留足够空间
     uint32_t buffer_size = ros::serialization::serializationLength(kfmsg);
@@ -295,7 +295,7 @@ void RGBDHandler::send_keyframe(const std::pair<std::shared_ptr<rtabmap::SensorD
     // 使用ros::serialization::serialize进行序列化，将消息数据存入缓冲区
     ros::serialization::OStream stream(buffer.data(), buffer_size);
     ros::serialization::serialize(stream, kfmsg);
-
+    sendDataToCloud(buffer); 
     std::cout << "Serialized data length: " << buffer.size() << std::endl;
 }
 
@@ -303,46 +303,31 @@ ros::NodeHandle& RGBDHandler::getNH() {
     return nh_;
 }
 
-void RGBDHandler::sendSensorDataToCloud(const rtabmap::SensorData& sensor_data)
-{
-    try
-    {
-    // 从 SensorData 中提取 RGB 图像和时间戳
-    cv::Mat rgb = sensor_data.imageRaw();  // 获取 RGB 图像
-    double timestamp = sensor_data.stamp();  // 获取时间戳
+void RGBDHandler::sendDataToCloud(const std::vector<uint8_t>& serialized_data) {
+    try {
+        // 创建 HTTP 客户端对象，替换为你的云端地址
+        httplib::Client cli("http://192.168.100.105:5000"); // 你的接收端地址
 
-    // 如果需要深度图像，可以通过 sensor_data.depthRaw() 获取
-    cv::Mat depth = sensor_data.depthRaw();  // 获取深度图像（可选）
+        // 发送 POST 请求，将数据作为 body 发送
+        auto res = cli.Post("/receive", reinterpret_cast<const char*>(serialized_data.data()), serialized_data.size(), "application/octet-stream");
 
-    // 打印出图像和时间戳以确认
-    std::cout << "Timestamp: " << timestamp << std::endl;
-    std::cout << "RGB Image Size: " << rgb.size() << std::endl;
-    //std::cout << "Depth Image Size: " << depth.size() << std::endl;
-
-    // 创建 SerializableSensorData 对象（可以用来序列化）
-    SerializableSensorData sensorData(rgb, depth, sensor_data.id(), timestamp);
-
-    // 序列化数据
-    std::string serializedData = serializeSensorData(sensorData);
-
-    // 创建 HTTP 客户端对象
-    httplib::Client cli("http://localhost:8080");
-
-    // 发送 POST 请求，将数据作为 body 发送
-    auto res = cli.Post("/receive", serializedData, "application/octet-stream");
-
-    // 检查响应
-        if (res && res->status == 200) {
-        std::cout << "Server response: " << res->body << std::endl;
+        // 检查响应
+        if (res) {
+            if (res->status == 200) {
+                std::cout << "Server response: " << res->body << std::endl;
+            } else {
+                std::cerr << "Error: Received status code " << res->status << " from server. " 
+                          << res->body << std::endl;
+            }
         } else {
-        std::cerr << "Error: " << (res ? std::to_string(res->status) : "No response") << std::endl;
+            std::cerr << "Error: No response from server." << std::endl;
         }
     }
-    catch (const std::exception& e)
-    {
-    std::cerr << "Failed to send sensor data to cloud: " << e.what() << std::endl;
+    catch (const std::exception& e) {
+        std::cerr << "Failed to send sensor data to cloud: " << e.what() << std::endl;
     }
 }
+
 
 // main函数，初始化ROS节点并启动数据处理
 int main(int argc, char** argv)
@@ -361,11 +346,3 @@ int main(int argc, char** argv)
     return 0;
 }
 
-void test_callback(const sensor_msgs::ImageConstPtr& rgb_msg,
-                   const sensor_msgs::ImageConstPtr& dph_msg,
-                   const sensor_msgs::CameraInfoConstPtr& camera_info,
-                   const nav_msgs::OdometryConstPtr& odom
-                   ) {
-
-    std::cout << "hello world" << std::endl;
-}

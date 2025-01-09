@@ -1,2 +1,2 @@
-int8 id
+int32 id
 sensor_msgs/Image image_data
